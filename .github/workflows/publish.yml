@@ -1,0 +1,46 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Quality gate
+        run: |
+          bun run lint
+          bun run build
+          bun run test
+
+      - name: Stamp version from tag
+        # Lockstep versioning: every published package gets the tag version.
+        # bun publish then rewrites workspace:^ deps to ^<version>.
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Publishing version $VERSION"
+          for pkg in core cli vite next; do
+            (cd "packages/$pkg" && npm pkg set version="$VERSION")
+          done
+
+      - name: Publish to npm
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # Dependency order: core → cli → integrations.
+        run: |
+          for pkg in core cli vite next; do
+            echo "--- publishing @prewire/$pkg ---"
+            (cd "packages/$pkg" && bun publish --access public)
+          done

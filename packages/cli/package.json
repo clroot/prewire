@@ -27,7 +27,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@prewire/core": "workspace:*",
+    "@prewire/core": "workspace:^",
     "citty": "^0.2.2",
     "ts-morph": "^28.0.0"
   },

@@ -22,7 +22,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@prewire/cli": "workspace:*"
+    "@prewire/cli": "workspace:^"
   },
   "devDependencies": {
     "@prewire/core": "workspace:*",
