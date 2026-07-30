@@ -1,6 +1,6 @@
 import { injectable } from '@prewire/core'
-import type { RouterFake } from './ports'
-import { ROUTER } from './tokens'
+import type { RouterFake } from './router'
+import { ROUTER } from './router'
 
 /**
  * Kit-provided router fake for the `test` environment. Bindings are

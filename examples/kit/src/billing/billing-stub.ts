@@ -1,6 +1,6 @@
 import { injectable } from '@prewire/core'
-import type { BillingPort } from './ports'
-import { BILLING } from './tokens'
+import type { BillingPort } from './billing'
+import { BILLING } from './billing'
 
 /**
  * Kit default for apps that intentionally do not support billing:

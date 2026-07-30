@@ -1,4 +1,5 @@
-import type { Logger, RouterPort } from './ports'
+import type { Logger } from './logging/logger'
+import type { RouterPort } from './router/router'
 
 /**
  * The contract kit source expects any app's composition root to provide.

@@ -2,7 +2,7 @@
 
 > Prewire your app — compile-time DI for TypeScript frontends. Wired at build time, zero runtime container.
 
-**Status: early WIP (design phase)**
+**Status: early WIP — codegen engine, build integrations, and examples are implemented; not yet published**
 
 ## What
 
@@ -123,9 +123,12 @@ const repo = dbUserRepository.factory({ db: fakeDb })
 expect(await repo.findById('42')).toEqual(fakeUser)
 ```
 
-For now codegen runs as a standalone CLI step — use `prewire codegen --watch`
-next to your dev server. Build-tool integrations that automate this (Vite
-plugin, Next.js config wrapper) are planned once the codegen engine lands.
+Codegen runs as a standalone CLI step (`prewire codegen --watch`), or
+automatically through the build integrations: `@prewire/vite` (an
+[unplugin](https://unplugin.unjs.io/) covering Vite/webpack/rspack — runs
+codegen, fails the build on graph violations, and injects the `#prewire`
+alias) and `@prewire/next` (`withPrewire()` wraps next.config — codegen at
+config evaluation, plus a source watcher during `next dev`).
 
 ## Why
 
@@ -138,10 +141,19 @@ plugin, Next.js config wrapper) are planned once the codegen engine lands.
 
 ## Packages
 
-| Package         | Description                                                                              |
-| --------------- | ---------------------------------------------------------------------------------------- |
-| `@prewire/core` | `InjectionToken`, the `injectable()` provider declaration, and the `Container` interface |
-| `@prewire/cli`  | `prewire codegen` — scans sources and generates wiring code                              |
+| Package         | Description                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| `@prewire/core` | `InjectionToken` and the `injectable()` binding declaration — plain data, zero runtime         |
+| `@prewire/cli`  | `prewire codegen` — scans sources, validates the graph, emits per-app composition roots        |
+| `@prewire/vite` | unplugin build integration (Vite/webpack/rspack) — automatic codegen + `#prewire` alias        |
+| `@prewire/next` | `withPrewire()` next.config wrapper — codegen at config time, source watcher during `next dev` |
+
+## Examples
+
+[`examples/`](./examples) is a product-line monorepo: one shared kit, three
+apps on three different router frameworks (Next.js, TanStack Router,
+react-router), all wired to the same navigation port. It demonstrates every
+mechanism above — start with the [examples README](./examples/README.md).
 
 ## Non-goals
 
