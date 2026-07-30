@@ -2,7 +2,7 @@
 
 > Prewire your app — compile-time DI for TypeScript frontends. Wired at build time, zero runtime container.
 
-**Status: early WIP — codegen engine, build integrations, and examples are implemented; not yet published**
+**Status: early 0.x, [published to npm](https://www.npmjs.com/package/@prewire/core) — APIs may still change between minor versions**
 
 ## What
 
@@ -156,6 +156,17 @@ const repo = dbUserRepository.factory({ db: fakeDb })
 expect(await repo.findById('42')).toEqual(fakeUser)
 ```
 
+## Install
+
+```sh
+bun add @prewire/core        # tokens + injectable()
+bun add -d @prewire/cli      # prewire codegen
+bun add -d @prewire/vite     # optional — Vite/webpack/rspack integration
+bun add -d @prewire/next     # optional — Next.js integration
+```
+
+(npm/pnpm/yarn equivalents work the same.)
+
 ## Running codegen
 
 Standalone CLI, or automated through the build integrations:
@@ -193,12 +204,12 @@ roots in sync by hand starts to hurt.
 
 ## Packages
 
-| Package         | Description                                                                                    |
-| --------------- | ---------------------------------------------------------------------------------------------- |
-| `@prewire/core` | `InjectionToken` and the `injectable()` binding declaration — plain data, zero runtime         |
-| `@prewire/cli`  | `prewire codegen` — scans sources, validates the graph, emits per-app composition roots        |
-| `@prewire/vite` | unplugin build integration (Vite/webpack/rspack) — automatic codegen + `#prewire` alias        |
-| `@prewire/next` | `withPrewire()` next.config wrapper — codegen at config time, source watcher during `next dev` |
+| Package                                                        | Description                                                                                    |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [`@prewire/core`](https://www.npmjs.com/package/@prewire/core) | `InjectionToken` and the `injectable()` binding declaration — plain data, zero runtime         |
+| [`@prewire/cli`](https://www.npmjs.com/package/@prewire/cli)   | `prewire codegen` — scans sources, validates the graph, emits per-app composition roots        |
+| [`@prewire/vite`](https://www.npmjs.com/package/@prewire/vite) | unplugin build integration (Vite/webpack/rspack) — automatic codegen + `#prewire` alias        |
+| [`@prewire/next`](https://www.npmjs.com/package/@prewire/next) | `withPrewire()` next.config wrapper — codegen at config time, source watcher during `next dev` |
 
 ## Examples
 
