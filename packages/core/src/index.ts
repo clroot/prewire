@@ -1,7 +1,5 @@
 export { InjectionToken } from './token'
-export type { ClassRef, Token, TokenType } from './token'
+export type { TokenType } from './token'
 
-export { Injectable } from './injectable'
-export type { Environment, InjectableOptions, Scope } from './injectable'
-
-export type { Container } from './container'
+export { injectable } from './injectable'
+export type { Binding, DepsShape, InjectableOptions, ResolvedDeps } from './injectable'

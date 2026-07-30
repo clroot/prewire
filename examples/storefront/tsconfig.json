@@ -1,0 +1,7 @@
+{
+  "extends": ["../../tsconfig.base.json", "./prewire.paths.gen.json"],
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src"]
+}

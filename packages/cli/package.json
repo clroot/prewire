@@ -1,11 +1,17 @@
 {
   "name": "@prewire/cli",
   "version": "0.0.0",
-  "description": "prewire codegen CLI — scans @Injectable classes and generates container wiring at build time",
+  "description": "prewire codegen CLI — scans injectable() declarations and generates per-app composition roots at build time",
   "license": "MIT",
   "type": "module",
   "bin": {
     "prewire": "./dist/index.js"
+  },
+  "exports": {
+    "./resolve": {
+      "types": "./dist/resolve.d.ts",
+      "default": "./dist/resolve.js"
+    }
   },
   "files": [
     "dist"

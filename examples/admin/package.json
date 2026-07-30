@@ -1,0 +1,28 @@
+{
+  "name": "@example/admin",
+  "private": true,
+  "version": "0.0.0",
+  "description": "TanStack Start app of the example product line — overrides the kit billing stub with a real implementation",
+  "type": "module",
+  "scripts": {
+    "build": "prewire codegen && tsc --noEmit",
+    "typecheck": "prewire codegen && tsc --noEmit",
+    "test": "prewire codegen && vitest run"
+  },
+  "imports": {
+    "#prewire": {
+      "default": "./src/prewire/container.live.gen.ts"
+    }
+  },
+  "dependencies": {
+    "@example/kit": "workspace:*",
+    "@prewire/core": "workspace:*",
+    "@tanstack/react-router": "^1.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@prewire/cli": "workspace:*",
+    "vitest": "^4.1.10"
+  }
+}

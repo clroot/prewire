@@ -1,0 +1,10 @@
+{
+  "app": "storefront",
+  "include": ["src", "../kit/src"],
+  "environments": ["live", "test"],
+  "defaultEnvironment": "live",
+  "outDir": "src/prewire",
+  "conditions": {
+    "live": "default"
+  }
+}

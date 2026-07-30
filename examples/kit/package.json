@@ -1,0 +1,16 @@
+{
+  "name": "@example/kit",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared kit of the example product line — ports, tokens, and default bindings consumed as source by every app",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prewire/core": "workspace:*"
+  }
+}

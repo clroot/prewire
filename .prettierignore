@@ -3,3 +3,4 @@ dist/
 .turbo/
 bun.lock
 *.gen.ts
+*.gen.json

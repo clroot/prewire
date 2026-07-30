@@ -1,0 +1,26 @@
+{
+  "name": "@example/storefront",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Next.js app of the example product line — uses the router port, deliberately does not use billing",
+  "type": "module",
+  "scripts": {
+    "build": "prewire codegen && tsc --noEmit",
+    "typecheck": "prewire codegen && tsc --noEmit"
+  },
+  "imports": {
+    "#prewire": {
+      "default": "./src/prewire/container.live.gen.ts"
+    }
+  },
+  "dependencies": {
+    "@example/kit": "workspace:*",
+    "@prewire/core": "workspace:*",
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@prewire/cli": "workspace:*"
+  }
+}
