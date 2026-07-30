@@ -10,134 +10,186 @@ Just like Quarkus ArC generates bean wiring at build time, prewire analyzes your
 TypeScript sources and **generates** the DI wiring code. No runtime container,
 no `reflect-metadata`, no `experimentalDecorators`.
 
-You define the interfaces you want — prewire injects the implementations at
-compile time.
+You write the nodes of the graph — `injectable()` declarations whose
+dependencies are a static object literal mapping names to tokens, never
+constructed by hand. `prewire codegen` discovers the declarations across your
+codebase, assembles them in dependency order, validates the graph (a missing,
+circular, or conflicting binding is a **build error**), and emits a plain,
+readable composition root per app and environment.
+
+prewire ships the mechanism only. Ports, adapters, and domain abstractions are
+things you build on top of it.
+
+## The headline: one core, many apps
+
+prewire is built for **monorepo product lines** — one shared kit consumed as
+source by several business apps, where the kit must stay closed while each app
+extends it differently.
+
+The kit declares a port, and a default that fails loudly on purpose:
 
 ```ts
+// kit/src/billing.ts
 import { injectable, InjectionToken } from '@prewire/core'
 
-interface User {
-  id: string
-  name: string
+export interface BillingPort {
+  charge(customerId: string, amountCents: number): Promise<string>
 }
 
-interface Database {
-  queryUser(id: string): Promise<User>
-}
+export const BILLING = new InjectionToken<BillingPort>('billing')
 
-interface UserRepository {
-  findById(id: string): Promise<User>
-}
-
-const DATABASE = new InjectionToken<Database>('Database')
-const USER_REPOSITORY = new InjectionToken<UserRepository>('UserRepository')
-
-// server — talks to the database directly
-export const dbUserRepository = injectable(
-  { db: DATABASE }, // dependencies are declared, never supplied
-  ({ db }): UserRepository => ({
-    findById: (id) => db.queryUser(id),
+// Billing is unsupported unless an app says otherwise. `default: true`
+// deliberately opens this binding for override — closed by default,
+// like Kotlin's `open`.
+export const billingStub = injectable(
+  {},
+  (): BillingPort => ({
+    charge: () => {
+      throw new Error('billing is not supported in this app')
+    },
   }),
+  { provides: BILLING, default: true },
+)
+```
+
+The one app that supports billing overrides the stub — no marker needed on the
+overriding side, because the kit already opened the token:
+
+```ts
+// apps/admin/src/bindings/invoice-billing.ts
+export const invoiceBilling = injectable(
+  { logger: LOGGER },
+  ({ logger }): BillingPort => ({
+    charge: async (customerId, amountCents) => {
+      logger.info(`charging ${customerId}`)
+      return createInvoice(customerId, amountCents)
+    },
+  }),
+  { provides: BILLING },
+)
+```
+
+Codegen runs **per app** — each app scans its own dependency graph (app + kit)
+and gets its own composition root:
+
+```ts
+// apps/storefront/src/prewire/container.live.gen.ts (generated)
+export const billing = /* @__PURE__ */ billingStubBinding.factory({})
+```
+
+```ts
+// apps/admin/src/prewire/container.live.gen.ts (generated)
+export const billing = /* @__PURE__ */ invoiceBillingBinding.factory({ logger })
+```
+
+Consumers — including code **inside the kit** — only ever write one import:
+
+```ts
+// kit/src/receipts.ts — kit source, not app source
+import { billing } from '#prewire'
+```
+
+The kit never depends on app packages, yet each app's build resolves that
+import to its own root (generated per-app tsconfig paths / bundler alias).
+Dependency inversion happens in module resolution, at build time.
+
+## The override contract
+
+- Only bindings marked `default: true` may be overridden — an unmarked
+  duplicate for the same token is a **build error**.
+- Exactly one unmarked binding wins over any number of opened defaults; two
+  unmarked bindings are a build error.
+- Among defaults, an environment-specific binding beats a universal one; a tie
+  is a build error.
+
+Deterministic, compile-time, order-independent — think of it as Spring's
+`@ConditionalOnMissingBean` without the runtime bean-ordering roulette.
+
+## Environments are a user-defined axis
+
+`environment` values are yours to define — business apps of a product line,
+`server`/`client` across the RSC boundary, `dev`/`test`/`prod`, native
+platforms. One root is generated per environment, and one and the same
+`#prewire` specifier resolves to the right root per build graph (package.json
+subpath imports with export conditions, a bundler alias, tsconfig paths).
+
+The server/client split falls out of the same mechanism:
+
+```ts
+export const dbUserRepository = injectable(
+  { db: DATABASE },
+  ({ db }): UserRepository => ({ findById: (id) => db.queryUser(id) }),
   { provides: USER_REPOSITORY, environment: 'server' },
 )
 
-// client — calls the API
 export const fetchUserRepository = injectable(
   {},
-  (): UserRepository => ({
-    findById: async (id) => {
-      const res = await fetch(`/api/users/${id}`)
-      return res.json()
-    },
-  }),
+  (): UserRepository => ({ findById: (id) => fetch(`/api/users/${id}`).then((r) => r.json()) }),
   { provides: USER_REPOSITORY, environment: 'client' },
 )
 ```
 
-You write the nodes of the graph — dependencies are declared as a static object
-literal mapping names to tokens, never constructed by hand. `prewire codegen`
-discovers the declarations across
-your codebase, assembles them in dependency order, validates the graph, and
-emits the composition root:
-
-```sh
-prewire codegen   # → container.gen.ts (wiring is generated at build time)
-```
-
-The output is plain, readable TypeScript — one file per environment, one
-export per token, assembled in dependency order:
-
-```ts
-// container.server.gen.ts — generated by prewire, do not edit
-import { pgDatabase } from './db/pg-database'
-import { dbUserRepository } from './repositories/user-repository'
-
-const database = pgDatabase.factory({})
-export const userRepository = dbUserRepository.factory({ db: database })
-```
-
-```ts
-// container.client.gen.ts — generated by prewire, do not edit
-import { fetchUserRepository } from './repositories/user-repository'
-
-export const userRepository = fetchUserRepository.factory({})
-```
-
-(`pgDatabase` is whatever `injectable()` you declared for the `DATABASE`
-token — prewire found it, saw that `dbUserRepository` depends on it, and
-wired them in order. Had you forgotten to declare it, codegen would fail
-the build.)
-
-You never import an environment-specific file yourself. Codegen also emits
-the module-resolution mapping for your setup — package.json
-[subpath imports](https://nodejs.org/api/packages.html#subpath-imports) with
-export conditions (`react-server` → server root, default → client root),
-Metro platform extensions, or a bundler alias — so every build graph
-resolves one and the same specifier to its own composition root:
-
-```ts
-// anywhere in your app — server or client, the import is identical
-import { userRepository } from '#prewire'
-
-const user = await userRepository.findById('42')
-```
-
-Server code gets the database-backed implementation, the client bundle gets
-the fetch-based one. Both artifacts export the same names typed against the
-same port, so call sites never know — or care — which environment they are
-compiled into.
-
 A singleton is nothing more than a module-level `const`, so unused bindings
-tree-shake away — and the client artifact **structurally** cannot leak
-server code into the bundle, because it never imports the server modules in
-the first place. A token that only has a server binding has no export in the
-client artifact at all: reaching for it from client code is a build error,
-not a runtime surprise.
+tree-shake away — and the client artifact **structurally** cannot leak server
+code, because it never imports the server modules in the first place. A token
+that only has a server binding has no export in the client artifact at all:
+reaching for it from client code is a build error, not a runtime surprise.
 
-In tests you don't need the container at all. Factories are plain
-functions, so hand them fakes directly — no `vi.mock`, no module-path
-strings:
+Testing rides the same axis. A kit can bind a fake with knobs under
+`environment: 'test'` (`default: true`), and a vitest config points `#prewire`
+at the test root with one line:
+
+```ts
+// vitest.config.ts
+import { prewireResolve } from '@prewire/cli/resolve'
+
+export default defineConfig({
+  resolve: { alias: prewireResolve({ env: 'test' }) },
+})
+```
+
+And because factories are plain functions, unit tests can skip the container
+entirely — hand them fakes directly, no `vi.mock`, no module-path strings:
 
 ```ts
 const repo = dbUserRepository.factory({ db: fakeDb })
 expect(await repo.findById('42')).toEqual(fakeUser)
 ```
 
-Codegen runs as a standalone CLI step (`prewire codegen --watch`), or
-automatically through the build integrations: `@prewire/vite` (an
-[unplugin](https://unplugin.unjs.io/) covering Vite/webpack/rspack — runs
-codegen, fails the build on graph violations, and injects the `#prewire`
-alias) and `@prewire/next` (`withPrewire()` wraps next.config — codegen at
-config evaluation, plus a source watcher during `next dev`).
+## Running codegen
+
+Standalone CLI, or automated through the build integrations:
+
+```sh
+prewire codegen --watch        # standalone, next to any dev server
+```
+
+- `@prewire/vite` — an [unplugin](https://unplugin.unjs.io/) covering
+  Vite/webpack/rspack: runs codegen, fails the build on graph violations, and
+  injects the `#prewire` alias automatically.
+- `@prewire/next` — `withPrewire()` wraps next.config: codegen at config
+  evaluation, plus a source watcher during `next dev` (Turbopack exposes no
+  bundler hooks; prewire emits files, so it doesn't need any).
 
 ## Why
 
-- **Zero runtime container** — all wiring is generated code; unused bindings are
-  tree-shaken away.
-- **Build-time graph validation** — a missing or circular binding is a build
-  error, not a runtime error.
-- **Environment-conditional bindings** — bind different implementations to the
-  same token per environment (server/client across the RSC boundary, dev/prod).
+- **Zero runtime container** — all wiring is generated, eject-able code;
+  unused bindings tree-shake away.
+- **Build-time graph validation** — missing, circular, or conflicting
+  bindings fail the build, not the user session.
+- **Deterministic extension for shared code** — kit defaults + explicit
+  `default: true` openness give a product line one core and per-app wiring.
+- **Environment-conditional bindings on a user-defined axis** — business
+  apps, server/client, test — same token, different implementation per build.
+
+## When not to use prewire
+
+prewire's value scales with **bindings × environments × entry points**. A
+single app on a single environment with a handful of bindings does not need
+it — a hand-written composition root (one file that calls your factories in
+order) is simpler and just as safe. Reach for prewire when the same ports are
+wired differently across apps, environments, or test setups, and keeping N
+roots in sync by hand starts to hurt.
 
 ## Packages
 
