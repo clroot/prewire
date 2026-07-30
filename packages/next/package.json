@@ -1,0 +1,34 @@
+{
+  "name": "@prewire/next",
+  "version": "0.0.0",
+  "description": "prewire build integration for Next.js — withPrewire() runs codegen at config time and watches sources during next dev",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@prewire/cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@prewire/core": "workspace:*",
+    "@types/node": "^26.1.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

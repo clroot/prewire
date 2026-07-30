@@ -8,6 +8,10 @@
     "prewire": "./dist/index.js"
   },
   "exports": {
+    "./engine": {
+      "types": "./dist/engine.d.ts",
+      "default": "./dist/engine.js"
+    },
     "./resolve": {
       "types": "./dist/resolve.d.ts",
       "default": "./dist/resolve.js"

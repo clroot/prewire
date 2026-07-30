@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-import { watch } from 'node:fs'
-import { relative, resolve } from 'node:path'
+import { relative } from 'node:path'
 import { defineCommand, runMain } from 'citty'
 import { loadConfig } from './config'
 import { runCodegen } from './codegen'
+import type { CodegenRunResult } from './codegen'
+import { watchCodegen } from './watch'
 
-function runOnce(configPath: string): boolean {
-  const config = loadConfig(configPath)
-  const result = runCodegen(config)
+function report(result: CodegenRunResult): boolean {
   if (result.diagnostics.hasErrors) {
     console.error(result.diagnostics.format())
     return false
@@ -41,33 +40,13 @@ const codegen = defineCommand({
   },
   run({ args }) {
     if (!args.watch) {
-      if (!runOnce(args.config)) process.exitCode = 1
+      if (!report(runCodegen(loadConfig(args.config)))) process.exitCode = 1
       return
     }
-
-    const rerun = (): void => {
-      try {
-        runOnce(args.config)
-      } catch (error) {
-        console.error(error instanceof Error ? error.message : error)
-      }
-    }
-    rerun()
-
-    const config = loadConfig(args.config)
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const schedule = (path: string | null): void => {
-      // Ignore our own outputs so a write does not retrigger the watcher.
-      if (path !== null && /\.gen\.(ts|json)$/.test(path)) return
-      clearTimeout(timer)
-      timer = setTimeout(rerun, 100)
-    }
-    for (const dir of config.include) {
-      watch(resolve(config.rootDir, dir), { recursive: true }, (_event, filename) =>
-        schedule(filename),
-      )
-    }
-    watch(config.configPath, () => schedule(null))
+    watchCodegen(args.config, {
+      onRun: report,
+      onError: (error) => console.error(error instanceof Error ? error.message : error),
+    })
     console.log('[prewire] watching for changes…')
   },
 })

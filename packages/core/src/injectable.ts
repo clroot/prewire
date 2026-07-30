@@ -59,6 +59,8 @@ export interface Binding<T, D extends DepsShape = DepsShape> {
  * )
  * ```
  */
+// #__NO_SIDE_EFFECTS__ — declaring a binding is pure, so bundlers can
+// drop unused declarations (and their factories) from app bundles.
 export function injectable<T, const D extends DepsShape>(
   deps: D,
   factory: (deps: ResolvedDeps<D>) => T,
