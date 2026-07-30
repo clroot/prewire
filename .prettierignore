@@ -4,3 +4,4 @@ dist/
 bun.lock
 *.gen.ts
 *.gen.json
+.ouroboros_eval_artifact.md
