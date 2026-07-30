@@ -1,4 +1,5 @@
 import type { RouterFake } from '@example/kit'
+import { openShared } from '@example/kit'
 import { router } from '#prewire'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { chargeAndShowReceipt } from '../src/billing-flow'
@@ -21,5 +22,18 @@ describe('chargeAndShowReceipt', () => {
   it('records navigation in the router fake history', async () => {
     const receiptId = await chargeAndShowReceipt('cus_7', 500)
     expect(fake.history).toEqual([`/billing/receipts/${receiptId}`])
+  })
+})
+
+describe('kit-internal consumer', () => {
+  beforeEach(() => {
+    fake.reset()
+  })
+
+  it('resolves #prewire inside kit source to this app root', () => {
+    // openShared lives in @example/kit and imports '#prewire' itself —
+    // in this test run it lands on the SAME test root as app code does.
+    openShared('/shared/report')
+    expect(fake.history).toEqual(['/shared/report'])
   })
 })

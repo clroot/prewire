@@ -1,3 +1,4 @@
+import { shareLink } from '@example/kit'
 import { logger, router } from '#prewire'
 
 /**
@@ -13,4 +14,9 @@ export function openProduct(slug: string): void {
 
 export function productHref(slug: string): string {
   return router.href(`/products/${slug}`)
+}
+
+/** Uses a kit-internal consumer — wired to THIS app's root by the build. */
+export function productShareLink(slug: string): string {
+  return shareLink(`/products/${slug}`)
 }

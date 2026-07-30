@@ -22,3 +22,7 @@ import { billing, router } from '#prewire'
 ```
 
 Same import in every app and environment — different wiring, decided at build time.
+
+## Kit-internal consumers (dependency inversion via module resolution)
+
+`kit/src/share-link.ts` imports `#prewire` from **inside the shared kit**. Kit never depends on app packages, yet each app's build resolves that very import to its own composition root: the app's generated tsconfig paths / bundler alias apply program-wide, so kit source compiled inside the storefront build gets storefront wiring, and the same file inside the admin test run gets the test root (proven in `admin/tests/billing-flow.test.ts`). For standalone typechecking, kit maps `#prewire` to `src/prewire-contract.ts` — a types-only declaration of what kit expects any app root to provide.
