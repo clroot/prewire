@@ -25,15 +25,21 @@ jobs:
           bun run build
           bun run test
 
-      - name: Stamp version from tag
+      - name: Stamp versions from tag
         # Lockstep versioning: every published package gets the tag version.
-        # bun publish then rewrites workspace:^ deps to ^<version>.
+        # Inter-package ranges are stamped EXPLICITLY — bun's workspace:^
+        # rewriting resolves from the lockfile, which still carries the
+        # pre-stamp version, so relying on it ships broken ranges
+        # (v0.1.0 shipped with ^0.0.0 exactly this way).
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "Publishing version $VERSION"
           for pkg in core cli vite next; do
             (cd "packages/$pkg" && npm pkg set version="$VERSION")
           done
+          (cd packages/cli && npm pkg set "dependencies.@prewire/core=^$VERSION")
+          (cd packages/vite && npm pkg set "dependencies.@prewire/cli=^$VERSION")
+          (cd packages/next && npm pkg set "dependencies.@prewire/cli=^$VERSION")
 
       - name: Publish to npm
         env:
