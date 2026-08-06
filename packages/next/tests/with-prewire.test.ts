@@ -60,6 +60,25 @@ describe('withPrewire', () => {
     expect(existsSync(join(dir, 'src/prewire/container.live.gen.ts'))).toBe(true)
   })
 
+  it('accepts an interface-typed config object', async () => {
+    // Next exports `NextConfig` as an interface, and interfaces have no
+    // implicit index signature — a `Record<string, unknown>` constraint
+    // rejects `withPrewire(nextConfig)` for every real Next app.
+    interface FrameworkConfig {
+      reactStrictMode?: boolean
+      transpilePackages?: string[]
+    }
+    const dir = scaffoldApp()
+    const nextConfig: FrameworkConfig = {
+      reactStrictMode: true,
+      transpilePackages: ['@acme/kit'],
+    }
+    const configFn = withPrewire(nextConfig, { config: join(dir, 'prewire.json') })
+
+    const config = await configFn('phase-production-build', CTX)
+    expect(config).toBe(nextConfig)
+  })
+
   it('supports the function form of next config', async () => {
     const dir = scaffoldApp()
     const configFn = withPrewire((phase: string) => ({ phaseSeen: phase }), {
