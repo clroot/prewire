@@ -49,7 +49,7 @@ function runOrThrow(configPath: string): void {
  * export default withPrewire({ reactStrictMode: true })
  * ```
  */
-export function withPrewire<C extends Record<string, unknown>>(
+export function withPrewire<C extends object>(
   nextConfig: C | NextConfigFn<C>,
   options: WithPrewireOptions = {},
 ): NextConfigFn<C> {

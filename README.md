@@ -182,6 +182,43 @@ prewire codegen --watch        # standalone, next to any dev server
   evaluation, plus a source watcher during `next dev` (Turbopack exposes no
   bundler hooks; prewire emits files, so it doesn't need any).
 
+### Resolving `#prewire` in a source-consumed monorepo
+
+Node subpath imports (`#…`) are package-local by spec, so shared packages
+consumed **as source** — Next `transpilePackages`, Vite `optimizeDeps.exclude`,
+a bundler that compiles workspace TS directly — cannot resolve `#prewire` to
+the importing app's root through `package.json` `imports`. That resolution has
+to come from the app's module resolver, and the app's tsconfig `paths` is
+enough: Next 16 / Turbopack applies it to transpiled workspace sources too.
+
+```jsonc
+// apps/<app>/tsconfig.json
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "#prewire": ["./prewire/container.live.gen.ts"], // ← declare it here
+    },
+  },
+}
+```
+
+```jsonc
+// packages/kit/tsconfig.json — standalone typecheck only
+{
+  "compilerOptions": {
+    "paths": { "#prewire": ["./src/prewire-contract.ts"] },
+  },
+}
+```
+
+`tsconfigPaths: true` (the default) emits `prewire.paths.gen.json` for the app
+tsconfig to `extends`. That only works when the app declares **no** `paths` of
+its own: TypeScript's `extends` replaces `compilerOptions.paths` wholesale
+rather than merging it, so an app with `@/*` or `~/*` aliases would drop the
+generated mapping. Set `tsconfigPaths: false` and declare the one entry inline,
+as above.
+
 ## Why
 
 - **Zero runtime container** — all wiring is generated, eject-able code;
