@@ -5,6 +5,9 @@ export type { RouterFake, RouterPort } from './router/router'
 export { ROUTER } from './router/router'
 export type { BillingPort } from './billing/billing'
 export { BILLING } from './billing/billing'
+export type { Repository } from './records/repository'
+export { REPOSITORY } from './records/repository'
+export type { Customer } from './records/customer'
 
 // Kit default bindings — every one deliberately opened with `default: true`.
 export { consoleLogger } from './logging/console-logger'

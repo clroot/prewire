@@ -15,6 +15,7 @@ examples/
 │       ├── logging/        Logger port + token · console default binding
 │       ├── router/         RouterPort + token · test fake with knobs
 │       ├── billing/        BillingPort + token · loud throw stub
+│       ├── records/        generic Repository<T> port + token · Customer record
 │       ├── navigation/     kit-internal consumers of '#prewire'
 │       └── prewire-contract.ts
 ├── storefront/             Next.js app
@@ -42,16 +43,17 @@ support    → container.live.gen.ts → reactRouterBinding     (react-router)
 
 ## Mechanism → where to look
 
-| Mechanism                                                | Files                                                                                                         |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Deliberate openness (`default: true`, Kotlin-open model) | [`kit/src/logging/console-logger.ts`](./kit/src/logging/console-logger.ts)                                    |
-| App override of a kit default                            | [`admin/src/bindings/invoice-billing.ts`](./admin/src/bindings/invoice-billing.ts)                            |
-| Loud throw stub for intended non-support                 | [`kit/src/billing/billing-stub.ts`](./kit/src/billing/billing-stub.ts)                                        |
-| Environment-axis test fake with knobs                    | [`kit/src/router/router-fake.ts`](./kit/src/router/router-fake.ts)                                            |
-| One-line test wiring (`prewireResolve`)                  | [`admin/vitest.config.ts`](./admin/vitest.config.ts)                                                          |
-| Kit-internal `#prewire` consumer + standalone typecheck  | [`kit/src/navigation/`](./kit/src/navigation), [`kit/src/prewire-contract.ts`](./kit/src/prewire-contract.ts) |
-| Next.js integration (`withPrewire`)                      | [`storefront/next.config.ts`](./storefront/next.config.ts)                                                    |
-| Vite integration (auto codegen + alias)                  | [`support/vite.config.ts`](./support/vite.config.ts)                                                          |
+| Mechanism                                                | Files                                                                                                                                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Deliberate openness (`default: true`, Kotlin-open model) | [`kit/src/logging/console-logger.ts`](./kit/src/logging/console-logger.ts)                                                                             |
+| App override of a kit default                            | [`admin/src/bindings/invoice-billing.ts`](./admin/src/bindings/invoice-billing.ts)                                                                     |
+| Loud throw stub for intended non-support                 | [`kit/src/billing/billing-stub.ts`](./kit/src/billing/billing-stub.ts)                                                                                 |
+| Generic port specializations (`TOKEN.of<Type>()`)        | [`kit/src/records/repository.ts`](./kit/src/records/repository.ts), [`admin/src/invoices/invoice-summary.ts`](./admin/src/invoices/invoice-summary.ts) |
+| Environment-axis test fake with knobs                    | [`kit/src/router/router-fake.ts`](./kit/src/router/router-fake.ts)                                                                                     |
+| One-line test wiring (`prewireResolve`)                  | [`admin/vitest.config.ts`](./admin/vitest.config.ts)                                                                                                   |
+| Kit-internal `#prewire` consumer + standalone typecheck  | [`kit/src/navigation/`](./kit/src/navigation), [`kit/src/prewire-contract.ts`](./kit/src/prewire-contract.ts)                                          |
+| Next.js integration (`withPrewire`)                      | [`storefront/next.config.ts`](./storefront/next.config.ts)                                                                                             |
+| Vite integration (auto codegen + alias)                  | [`support/vite.config.ts`](./support/vite.config.ts)                                                                                                   |
 
 ## Running
 
