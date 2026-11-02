@@ -2,20 +2,30 @@ import { posix, relative, resolve, sep } from 'node:path'
 import type { ResolvedConfig } from './config'
 import type { DiagnosticBag } from './diagnostics'
 import type { ResolvedRoot } from './graph'
-import { tokenId } from './scan'
-import type { BindingDecl, TokenId } from './scan'
+import { describeToken, tokenId } from './scan'
+import type { BindingDecl, TokenId, TokenRef } from './scan'
+
+const upperFirst = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
+const lowerFirst = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1)
 
 /**
  * Derives the generated export identifier from a token's declared name:
  * SCREAMING_SNAKE becomes lowerCamel (ROUTER → router, PAYMENT_GATEWAY →
- * paymentGateway); anything else gets its first letter lowered.
+ * paymentGateway); anything else gets its first letter lowered. A
+ * specialized token is prefixed with its qualifier's type names
+ * (REPOSITORY.of<Repository<User>>() → userRepository).
  */
-export function deriveExportName(tokenName: string): string {
-  if (/^[A-Z][A-Z0-9_]*$/.test(tokenName)) {
-    const parts = tokenName.toLowerCase().split('_').filter(Boolean)
-    return parts.map((p, i) => (i === 0 ? p : p.charAt(0).toUpperCase() + p.slice(1))).join('')
-  }
-  return tokenName.charAt(0).toLowerCase() + tokenName.slice(1)
+export function deriveExportName(tokenName: string, qualifierParts: string[] = []): string {
+  const base = /^[A-Z][A-Z0-9_]*$/.test(tokenName)
+    ? tokenName
+        .toLowerCase()
+        .split('_')
+        .filter(Boolean)
+        .map((p, i) => (i === 0 ? p : upperFirst(p)))
+        .join('')
+    : lowerFirst(tokenName)
+  if (qualifierParts.length === 0) return base
+  return lowerFirst(qualifierParts.map(upperFirst).join('')) + upperFirst(base)
 }
 
 function toPosix(p: string): string {
@@ -37,19 +47,19 @@ export function emitRoot(
 
   // Generated export name per token, with collision detection.
   const exportNames = new Map<TokenId, string>()
-  const seenNames = new Map<string, TokenId>()
+  const seenNames = new Map<string, TokenRef>()
   for (const binding of root.bindings) {
     const id = tokenId(binding.provides)
-    const name = deriveExportName(binding.provides.name)
+    const name = deriveExportName(binding.provides.name, binding.provides.qualifier?.nameParts)
     const holder = seenNames.get(name)
-    if (holder && holder !== id) {
+    if (holder && tokenId(holder) !== id) {
       diagnostics.add(
         'EXPORT_NAME_COLLISION',
-        `Tokens "${holder}" and "${id}" both derive the generated export name "${name}" — rename one token`,
+        `Tokens ${describeToken(holder)} and ${describeToken(binding.provides)} both derive the generated export name "${name}" — rename one token or type`,
       )
       continue
     }
-    seenNames.set(name, id)
+    seenNames.set(name, binding.provides)
     exportNames.set(id, name)
   }
   if (diagnostics.hasErrors) return undefined

@@ -1,21 +1,44 @@
 import { resolve } from 'node:path'
 import { Node, Project, SyntaxKind, ts } from 'ts-morph'
-import type { Identifier, ObjectLiteralExpression, SourceFile } from 'ts-morph'
+import type { Identifier, ObjectLiteralExpression, SourceFile, TypeNode } from 'ts-morph'
 import type { DiagnosticBag } from './diagnostics'
 import type { ResolvedConfig } from './config'
 
 const CORE_SPECIFIER = '@prewire/core'
 
-/** Identity of a token: the module and exported variable name declaring it. */
+/**
+ * The type argument of a `TOKEN.of<...>()` specialization, identified
+ * nominally by the declaration sites of the types it references.
+ */
+export interface Qualifier {
+  /** Canonical identity, e.g. `/src/repo.ts#Repository</src/user.ts#User>`. */
+  key: string
+  /** Source text of the type argument, for diagnostics. */
+  label: string
+  /** Type names the generated export identifier is derived from. */
+  nameParts: string[]
+}
+
+/**
+ * Identity of a token: the module and exported variable name declaring it,
+ * plus the type argument when the token is specialized with `.of<...>()`.
+ */
 export interface TokenRef {
   file: string
   name: string
+  qualifier?: Qualifier
 }
 
 export type TokenId = string
 
 export function tokenId(ref: TokenRef): TokenId {
-  return `${ref.file}#${ref.name}`
+  const base = `${ref.file}#${ref.name}`
+  return ref.qualifier ? `${base}<${ref.qualifier.key}>` : base
+}
+
+export function describeToken(ref: TokenRef): string {
+  const of = ref.qualifier ? `.of<${ref.qualifier.label}>()` : ''
+  return `${ref.name}${of} (${ref.file})`
 }
 
 export interface BindingDecl {
@@ -101,6 +124,133 @@ function resolveTokenRef(idNode: Identifier, diagnostics: DiagnosticBag): TokenR
   return { file: decl.getSourceFile().getFilePath(), name: decl.getName() }
 }
 
+const KEYWORD_TYPES = new Set([
+  SyntaxKind.StringKeyword,
+  SyntaxKind.NumberKeyword,
+  SyntaxKind.BooleanKeyword,
+  SyntaxKind.BigIntKeyword,
+  SyntaxKind.SymbolKeyword,
+  SyntaxKind.ObjectKeyword,
+  SyntaxKind.UnknownKeyword,
+  SyntaxKind.AnyKeyword,
+  SyntaxKind.VoidKeyword,
+  SyntaxKind.UndefinedKeyword,
+  SyntaxKind.NeverKeyword,
+])
+
+interface QualifierPart {
+  key: string
+  names: string[]
+}
+
+/**
+ * Reads a specialization type argument syntactically. Only named types
+ * (with their own type arguments) and keyword types are accepted, each
+ * named type keyed by its declaration site — so two structurally equal
+ * types with different declarations never match.
+ */
+function parseQualifierType(node: TypeNode, diagnostics: DiagnosticBag): QualifierPart | undefined {
+  const file = node.getSourceFile().getFilePath()
+  if (KEYWORD_TYPES.has(node.getKind())) {
+    return { key: node.getText(), names: [node.getText()] }
+  }
+  if (!Node.isTypeReference(node)) {
+    diagnostics.add(
+      'NON_STATIC_DECLARATION',
+      `.of<${node.getText()}>() type argument must be built from named types and keyword types`,
+      file,
+    )
+    return undefined
+  }
+  const typeName = node.getTypeName()
+  const nameNode = Node.isQualifiedName(typeName) ? typeName.getRight() : typeName
+  const symbol = nameNode.getSymbol()
+  const target = symbol?.getAliasedSymbol() ?? symbol
+  const decls = target?.getDeclarations() ?? []
+  if (decls.some(Node.isTypeParameterDeclaration)) {
+    diagnostics.add(
+      'NON_STATIC_DECLARATION',
+      `.of<...>() type argument "${nameNode.getText()}" is a type parameter — specializations must be concrete`,
+      file,
+    )
+    return undefined
+  }
+  const decl = decls.find(
+    (d) =>
+      Node.isInterfaceDeclaration(d) ||
+      Node.isTypeAliasDeclaration(d) ||
+      Node.isClassDeclaration(d) ||
+      Node.isEnumDeclaration(d),
+  )
+  if (!decl) {
+    diagnostics.add(
+      'NON_STATIC_DECLARATION',
+      `Cannot resolve type "${nameNode.getText()}" in .of<...>() to a declaration`,
+      file,
+    )
+    return undefined
+  }
+  const declName = target!.getName()
+  const args: QualifierPart[] = []
+  for (const arg of node.getTypeArguments()) {
+    const part = parseQualifierType(arg, diagnostics)
+    if (!part) return undefined
+    args.push(part)
+  }
+  const base = `${decl.getSourceFile().getFilePath()}#${declName}`
+  return {
+    key: args.length === 0 ? base : `${base}<${args.map((a) => a.key).join(',')}>`,
+    names: [declName, ...args.flatMap((a) => a.names)],
+  }
+}
+
+/** Resolves a token expression: `TOKEN` or `TOKEN.of<Type>()`. */
+function resolveTokenExpr(
+  node: Node,
+  what: string,
+  diagnostics: DiagnosticBag,
+): TokenRef | undefined {
+  if (Node.isIdentifier(node)) return resolveTokenRef(node, diagnostics)
+
+  const file = node.getSourceFile().getFilePath()
+  const callee = Node.isCallExpression(node) ? node.getExpression() : undefined
+  if (
+    !Node.isCallExpression(node) ||
+    !Node.isPropertyAccessExpression(callee) ||
+    callee.getName() !== 'of' ||
+    !Node.isIdentifier(callee.getExpression())
+  ) {
+    diagnostics.add(
+      'NON_STATIC_DECLARATION',
+      `${what} must reference a token identifier or \`TOKEN.of<Type>()\``,
+      file,
+    )
+    return undefined
+  }
+  const typeArgs = node.getTypeArguments()
+  if (typeArgs.length !== 1 || node.getArguments().length !== 0) {
+    diagnostics.add(
+      'NON_STATIC_DECLARATION',
+      `${what}: \`.of<Type>()\` takes exactly one inline type argument and no arguments`,
+      file,
+    )
+    return undefined
+  }
+  const base = resolveTokenRef(callee.getExpression() as Identifier, diagnostics)
+  const part = parseQualifierType(typeArgs[0]!, diagnostics)
+  if (!base || !part) return undefined
+  // Repository<User> → [User]: the outer generic usually restates the port.
+  const nameParts = part.names.length > 1 ? part.names.slice(1) : part.names
+  return {
+    ...base,
+    qualifier: {
+      key: part.key,
+      label: typeArgs[0]!.getText().replace(/\s+/g, ' '),
+      nameParts,
+    },
+  }
+}
+
 function parseDeps(
   obj: ObjectLiteralExpression,
   diagnostics: DiagnosticBag,
@@ -123,15 +273,7 @@ function parseDeps(
       )
       return undefined
     }
-    if (!Node.isIdentifier(value)) {
-      diagnostics.add(
-        'NON_STATIC_DECLARATION',
-        `dep "${name}" must reference a token identifier`,
-        obj.getSourceFile().getFilePath(),
-      )
-      return undefined
-    }
-    const ref = resolveTokenRef(value, diagnostics)
+    const ref = resolveTokenExpr(value, `dep "${name}"`, diagnostics)
     if (!ref) return undefined
     deps[name] = ref
   }
@@ -162,15 +304,7 @@ function parseOptions(
       ? prop.getInitializerOrThrow()
       : prop.getNameNode()
     if (name === 'provides') {
-      if (!Node.isIdentifier(value)) {
-        diagnostics.add(
-          'NON_STATIC_DECLARATION',
-          '"provides" must reference a token identifier',
-          file,
-        )
-        return undefined
-      }
-      provides = resolveTokenRef(value, diagnostics)
+      provides = resolveTokenExpr(value, '"provides"', diagnostics)
       if (!provides) return undefined
     } else if (name === 'environment') {
       if (Node.isStringLiteral(value)) {

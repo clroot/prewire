@@ -1,17 +1,12 @@
 import type { DiagnosticBag } from './diagnostics'
-import type { BindingDecl, TokenId } from './scan'
-import { tokenId } from './scan'
+import type { BindingDecl, TokenId, TokenRef } from './scan'
+import { describeToken, tokenId } from './scan'
 
 export interface ResolvedRoot {
   environment: string
   /** Winning bindings in topological order (dependencies first). */
   bindings: BindingDecl[]
   byToken: Map<TokenId, BindingDecl>
-}
-
-function describeToken(id: TokenId): string {
-  const [file, name] = id.split('#')
-  return `${name} (${file})`
 }
 
 /**
@@ -25,7 +20,7 @@ function describeToken(id: TokenId): string {
  *   beats a universal one; ties are a build error.
  */
 function pickWinner(
-  id: TokenId,
+  ref: TokenRef,
   candidates: BindingDecl[],
   environment: string,
   diagnostics: DiagnosticBag,
@@ -36,7 +31,7 @@ function pickWinner(
   if (overrides.length > 1) {
     diagnostics.add(
       'DUPLICATE_BINDING',
-      `Token ${describeToken(id)} has ${overrides.length} bindings without \`default: true\` in environment "${environment}". ` +
+      `Token ${describeToken(ref)} has ${overrides.length} bindings without \`default: true\` in environment "${environment}". ` +
         `Mark the overridable one with \`default: true\`, or remove the duplicate: ` +
         overrides.map((b) => `${b.exportName} (${b.file})`).join(', '),
     )
@@ -49,7 +44,7 @@ function pickWinner(
   const pool = specific.length > 1 ? specific : candidates
   diagnostics.add(
     'AMBIGUOUS_DEFAULTS',
-    `Token ${describeToken(id)} has multiple \`default: true\` bindings with equal specificity in environment "${environment}": ` +
+    `Token ${describeToken(ref)} has multiple \`default: true\` bindings with equal specificity in environment "${environment}": ` +
       pool.map((b) => `${b.exportName} (${b.file})`).join(', '),
   )
   return undefined
@@ -82,7 +77,7 @@ export function resolveRoot(
 
   const byToken = new Map<TokenId, BindingDecl>()
   for (const [id, group] of groups) {
-    const winner = pickWinner(id, group, environment, diagnostics)
+    const winner = pickWinner(group[0]!.provides, group, environment, diagnostics)
     if (winner) byToken.set(id, winner)
   }
   if (diagnostics.hasErrors) return undefined
@@ -93,7 +88,7 @@ export function resolveRoot(
       if (!byToken.has(depId)) {
         diagnostics.add(
           'MISSING_BINDING',
-          `No binding for token ${describeToken(depId)} in environment "${environment}" — ` +
+          `No binding for token ${describeToken(depRef)} in environment "${environment}" — ` +
             `required by dep "${depName}" of "${binding.exportName}" (${binding.file})`,
         )
       }
@@ -112,7 +107,9 @@ export function resolveRoot(
     if (done.has(id)) return true
     if (inProgress.has(id)) {
       const cycleStart = path.indexOf(id)
-      const cycle = [...path.slice(cycleStart), id].map(describeToken).join(' → ')
+      const cycle = [...path.slice(cycleStart), id]
+        .map((step) => describeToken(byToken.get(step)!.provides))
+        .join(' → ')
       diagnostics.add('CYCLE', `Dependency cycle detected: ${cycle}`)
       return false
     }
