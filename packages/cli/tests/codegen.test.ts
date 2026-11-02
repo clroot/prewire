@@ -350,11 +350,197 @@ describe('codegen — per-app roots and axes (AC3)', () => {
   })
 })
 
+describe('codegen — generic specializations', () => {
+  const REPO_TOKENS = `
+import { InjectionToken } from '@prewire/core'
+export interface Repository<T> { find(id: string): T }
+export const REPOSITORY = new InjectionToken<Repository<any>>('repository')
+`
+  const ENTITIES = `
+export interface User { id: string }
+export interface Order { total: number }
+`
+
+  it('wires each specialization of one token as its own binding', () => {
+    const project = makeProject()
+    project.createSourceFile('/app/src/repo.ts', REPO_TOKENS)
+    project.createSourceFile('/app/src/entities.ts', ENTITIES)
+    project.createSourceFile(
+      '/app/src/bindings.ts',
+      `
+      import { injectable, InjectionToken } from '@prewire/core'
+      import { REPOSITORY } from './repo'
+      import type { Repository } from './repo'
+      import type { Order, User as Member } from './entities'
+
+      export const REPORT = new InjectionToken<string>('report')
+
+      export const userRepo = injectable({}, (): Repository<Member> => ({ find: (id) => ({ id }) }), {
+        provides: REPOSITORY.of<Repository<Member>>(),
+      })
+      export const orderRepo = injectable({}, (): Repository<Order> => ({ find: () => ({ total: 1 }) }), {
+        provides: REPOSITORY.of<Repository<Order>>(),
+      })
+      export const report = injectable(
+        { users: REPOSITORY.of<Repository<Member>>(), orderRepository: REPOSITORY.of<Repository<Order>>() },
+        ({ users, orderRepository }) => users.find('1').id + orderRepository.find('1').total,
+        { provides: REPORT },
+      )
+      `,
+    )
+
+    const plan = planCodegen(makeConfig(), project.getSourceFiles())
+    expect(plan.diagnostics.items).toEqual([])
+    const root = plan.outputs.get('/app/src/prewire/container.app.gen.ts')!
+    expect(root).toContain(
+      'export const userRepository = /* @__PURE__ */ userRepoBinding.factory({})',
+    )
+    expect(root).toContain(
+      'export const orderRepository = /* @__PURE__ */ orderRepoBinding.factory({})',
+    )
+    expect(root).toContain(
+      'export const report = /* @__PURE__ */ reportBinding.factory({ users: userRepository, orderRepository })',
+    )
+    expect(root.indexOf('export const userRepository')).toBeLessThan(
+      root.indexOf('export const report'),
+    )
+  })
+
+  it('matches nominally — a structurally identical type is a different specialization', () => {
+    const project = makeProject()
+    project.createSourceFile('/app/src/repo.ts', REPO_TOKENS)
+    project.createSourceFile('/app/src/entities.ts', ENTITIES)
+    project.createSourceFile('/app/src/admin.ts', 'export interface User { id: string }')
+    project.createSourceFile(
+      '/app/src/bindings.ts',
+      `
+      import { injectable, InjectionToken } from '@prewire/core'
+      import { REPOSITORY } from './repo'
+      import type { Repository } from './repo'
+      import type { User } from './entities'
+      import type { User as AdminUser } from './admin'
+
+      export const NAMES = new InjectionToken<string>('names')
+
+      export const userRepo = injectable({}, (): Repository<User> => ({ find: (id) => ({ id }) }), {
+        provides: REPOSITORY.of<Repository<User>>(),
+      })
+      export const consumer = injectable(
+        { admins: REPOSITORY.of<Repository<AdminUser>>() },
+        ({ admins }) => admins.find('1').id,
+        { provides: NAMES },
+      )
+      `,
+    )
+
+    const plan = planCodegen(makeConfig(), project.getSourceFiles())
+    const missing = plan.diagnostics.items.find((d) => d.code === 'MISSING_BINDING')
+    expect(missing?.message).toContain('REPOSITORY.of<Repository<AdminUser>>()')
+  })
+
+  it('applies the override contract per specialization', () => {
+    const project = makeProject()
+    project.createSourceFile('/app/src/repo.ts', REPO_TOKENS)
+    project.createSourceFile('/app/src/entities.ts', ENTITIES)
+    project.createSourceFile(
+      '/app/src/bindings.ts',
+      `
+      import { injectable } from '@prewire/core'
+      import { REPOSITORY } from './repo'
+      import type { Repository } from './repo'
+      import type { Order, User } from './entities'
+
+      export const stubUsers = injectable({}, (): Repository<User> => ({ find: (id) => ({ id }) }), {
+        provides: REPOSITORY.of<Repository<User>>(),
+        default: true,
+      })
+      export const apiUsers = injectable({}, (): Repository<User> => ({ find: (id) => ({ id }) }), {
+        provides: REPOSITORY.of<Repository<User>>(),
+      })
+      export const orders = injectable({}, (): Repository<Order> => ({ find: () => ({ total: 1 }) }), {
+        provides: REPOSITORY.of<Repository<Order>>(),
+      })
+      `,
+    )
+
+    const plan = planCodegen(makeConfig(), project.getSourceFiles())
+    expect(plan.diagnostics.items).toEqual([])
+    const root = plan.outputs.get('/app/src/prewire/container.app.gen.ts')!
+    expect(root).toContain(
+      'export const userRepository = /* @__PURE__ */ apiUsersBinding.factory({})',
+    )
+    expect(root).toContain(
+      'export const orderRepository = /* @__PURE__ */ ordersBinding.factory({})',
+    )
+    expect(root).not.toContain('stubUsersBinding')
+  })
+
+  it('rejects duplicate bindings of the same specialization', () => {
+    const project = makeProject()
+    project.createSourceFile('/app/src/repo.ts', REPO_TOKENS)
+    project.createSourceFile('/app/src/entities.ts', ENTITIES)
+    project.createSourceFile(
+      '/app/src/bindings.ts',
+      `
+      import { injectable } from '@prewire/core'
+      import { REPOSITORY } from './repo'
+      import type { Repository } from './repo'
+      import type { User } from './entities'
+
+      export const a = injectable({}, (): Repository<User> => ({ find: (id) => ({ id }) }), {
+        provides: REPOSITORY.of<Repository<User>>(),
+      })
+      export const b = injectable({}, (): Repository<User> => ({ find: (id) => ({ id }) }), {
+        provides: REPOSITORY.of<Repository<User>>(),
+      })
+      `,
+    )
+
+    const plan = planCodegen(makeConfig(), project.getSourceFiles())
+    const dup = plan.diagnostics.items.find((d) => d.code === 'DUPLICATE_BINDING')
+    expect(dup?.message).toContain('REPOSITORY.of<Repository<User>>()')
+  })
+
+  it('rejects specializations that cannot be read statically', () => {
+    const project = makeProject()
+    project.createSourceFile('/app/src/repo.ts', REPO_TOKENS)
+    project.createSourceFile(
+      '/app/src/bindings.ts',
+      `
+      import { injectable } from '@prewire/core'
+      import { REPOSITORY } from './repo'
+      import type { Repository } from './repo'
+
+      export const inline = injectable({}, (): Repository<{ id: string }> => ({ find: (id) => ({ id }) }), {
+        provides: REPOSITORY.of<Repository<{ id: string }>>(),
+      })
+      export const untyped = injectable({}, (): Repository<any> => ({ find: () => 1 }), {
+        provides: REPOSITORY.of(),
+      })
+      `,
+    )
+
+    const plan = planCodegen(makeConfig(), project.getSourceFiles())
+    const messages = plan.diagnostics.items
+      .filter((d) => d.code === 'NON_STATIC_DECLARATION')
+      .map((d) => d.message)
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toContain('named types and keyword types')
+    expect(messages[1]).toContain('exactly one inline type argument')
+  })
+})
+
 describe('deriveExportName', () => {
   it('maps token names to generated export identifiers', () => {
     expect(deriveExportName('ROUTER')).toBe('router')
     expect(deriveExportName('PAYMENT_GATEWAY')).toBe('paymentGateway')
     expect(deriveExportName('BillingService')).toBe('billingService')
+  })
+
+  it('prefixes specialized tokens with their qualifier type names', () => {
+    expect(deriveExportName('REPOSITORY', ['User'])).toBe('userRepository')
+    expect(deriveExportName('EVENT_HANDLER', ['OrderPlaced'])).toBe('orderPlacedEventHandler')
+    expect(deriveExportName('CACHE', ['string'])).toBe('stringCache')
   })
 })
 

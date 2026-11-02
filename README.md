@@ -105,6 +105,43 @@ Dependency inversion happens in module resolution, at build time.
 Deterministic, compile-time, order-independent — think of it as Spring's
 `@ConditionalOnMissingBean` without the runtime bean-ordering roulette.
 
+## Generic ports
+
+One generic port can have one implementation per type argument. Specialize
+the token with `.of<...>()` on both sides — the binding and the consumer:
+
+```ts
+export interface Repository<T> {
+  findById(id: string): Promise<T>
+}
+// `any` in the generic position; each specialization narrows it.
+export const REPOSITORY = new InjectionToken<Repository<any>>('repository')
+
+export const userRepository = injectable(
+  {},
+  (): Repository<User> => ({ findById: (id) => fetchUser(id) }),
+  { provides: REPOSITORY.of<Repository<User>>() },
+)
+
+export const checkout = injectable(
+  { users: REPOSITORY.of<Repository<User>>(), orders: REPOSITORY.of<Repository<Order>>() },
+  ({ users, orders }): Checkout => createCheckout(users, orders),
+  { provides: CHECKOUT },
+)
+```
+
+Each specialization is its own binding with its own override contract, and
+gets its own export in the root (`userRepository`, `orderRepository` — the
+type names prefixed to the token name).
+
+Matching is **nominal**: codegen identifies the types in the type argument
+by their declaration sites, exactly like tokens, and never asks the type
+checker whether one is assignable to another. Two structurally identical
+`User` interfaces declared in different modules are different
+specializations. The type argument must therefore be written inline from
+named types and keyword types (`Repository<User>`, `Cache<string>`) —
+inline object types and type parameters are build errors.
+
 ## Environments are a user-defined axis
 
 `environment` values are yours to define — business apps of a product line,

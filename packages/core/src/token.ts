@@ -14,6 +14,23 @@ export class InjectionToken<T> {
 
   constructor(readonly description: string) {}
 
+  /**
+   * Specializes a generic port by its concrete type. Codegen matches
+   * specializations nominally — by the declaration sites of the types in
+   * the type argument, never by structural assignability — so
+   * `REPOSITORY.of<Repository<User>>()` and
+   * `REPOSITORY.of<Repository<Order>>()` are distinct bindings, each with
+   * its own override contract. Declare the base token with `any` in the
+   * generic position (`InjectionToken<Repository<any>>`).
+   *
+   * Like the token itself, the type argument must be written out inline
+   * at every use site: codegen reads it from the source, not from the
+   * type checker.
+   */
+  of<U extends T>(): InjectionToken<U> {
+    return this as unknown as InjectionToken<U>
+  }
+
   toString(): string {
     return `InjectionToken<${this.description}>`
   }
